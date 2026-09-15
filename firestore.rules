@@ -1,0 +1,198 @@
+rules_version = '2';
+
+// Mirrors src/utils/roles.js ROLE_PERMISSIONS. If you change the matrix in
+// roles.js, update this file too — they are two separate systems (JS for
+// the UI, this for real enforcement) that must be kept in sync by hand.
+//
+// Per the project requirements: UI-level hiding of buttons is NOT security.
+// Every sensitive write below is enforced here, independent of the frontend.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return isSignedIn()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function hasRole(roles) {
+      return isSignedIn() && myRole() in roles;
+    }
+
+    function isAdmin() {
+      return hasRole(['admin']);
+    }
+
+    // ---- users ---------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+      // Self-provisioning on first login: a user may create their own
+      // profile doc. Role defaults to "viewer" — UNLESS an admin has
+      // pre-assigned a different role by email (pendingUserRoles below),
+      // in which case the role must exactly match that pending doc.
+      // This is verified server-side here, not just trusted from the
+      // client — a user cannot grant themselves a role by simply writing
+      // a different string.
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && (
+          request.resource.data.role == 'viewer'
+          || (
+            exists(/databases/$(database)/documents/pendingUserRoles/$(request.auth.token.email))
+            && request.resource.data.role == get(/databases/$(database)/documents/pendingUserRoles/$(request.auth.token.email)).data.role
+          )
+        );
+
+      // Only admins may change roles or edit other users' profiles.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ---- pendingUserRoles -------------------------------------------------
+    // Admin pre-assigns a role to an email before that person ever logs
+    // in. Consumed (and deleted) automatically by AuthContext.jsx the
+    // first time that email signs in. Doc ID is the email address.
+    match /pendingUserRoles/{email} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.token.email == email);
+      allow create, update: if isAdmin();
+      // The invited user is allowed to delete only their own pending
+      // entry (self-provisioning consumes it) — never anyone else's.
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.token.email == email);
+    }
+
+    // ---- documents (HSE manual / manual builder) -----------------------
+    match /documents/{docId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    // ---- sops -----------------------------------------------------------
+    match /sops/{sopId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    // ---- risks ------------------------------------------------------------
+    match /risks/{riskId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager', 'hse_officer']);
+    }
+
+    // ---- incidents --------------------------------------------------------
+    match /incidents/{incidentId} {
+      allow read: if isSignedIn();
+      // Anyone can report an incident (matches CREATE_INCIDENT permission
+      // held by employee/supervisor/hse_officer/hse_manager/admin).
+      allow create: if hasRole(['admin', 'hse_manager', 'hse_officer', 'supervisor', 'employee']);
+      // Only HSE staff can edit/close an investigation or delete a record.
+      allow update, delete: if hasRole(['admin', 'hse_manager', 'hse_officer']);
+    }
+
+    // ---- permits / jsa / loto (forms & logs, ministry-forms submissions) --
+    match /permits/{permitId} {
+      allow read: if isSignedIn();
+      // Field staff can submit a permit/JSA/LOTO form...
+      allow create: if isSignedIn();
+      // ...but only HSE staff can edit or remove a submitted record.
+      allow update, delete: if hasRole(['admin', 'hse_manager', 'hse_officer']);
+    }
+    match /jsa/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if hasRole(['admin', 'hse_manager', 'hse_officer']);
+    }
+    match /loto/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if hasRole(['admin', 'hse_manager', 'hse_officer']);
+    }
+
+    // ---- inspections --------------------------------------------------------
+    match /inspections/{docId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager', 'hse_officer', 'supervisor']);
+    }
+
+    // ---- vehicles (fleet) -----------------------------------------------
+    match /vehicles/{vehicleId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    // ---- reports ----------------------------------------------------------
+    match /reports/{reportId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    // ---- Insurance module ---------------------------------------------
+    // Mirrors ROLES.INSURANCE_OFFICER / PERMISSIONS.MANAGE_INSURANCE in
+    // src/utils/roles.js. Admin always has it too (ALL_PERMISSIONS).
+    match /insurancePolicies/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceClaims/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceVehicles/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceAssets/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceEmployees/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insurers/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceFinance/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceRenewals/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+    match /insuranceArchive/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'insurance_officer']);
+    }
+
+    // ---- notifications ------------------------------------------------------
+    match /notifications/{notifId} {
+      allow read: if isSignedIn();
+      // System/admin generated only — not written from arbitrary clients.
+      allow write: if isAdmin();
+    }
+
+    // ---- auditLogs --------------------------------------------------------
+    match /auditLogs/{logId} {
+      // Every signed-in action creates a log entry (see auditLogService.js).
+      allow create: if isSignedIn();
+      // Audit trail is append-only: no one may edit or delete history,
+      // not even admins, from the client.
+      allow update, delete: if false;
+      // Only admins may review the audit trail.
+      allow read: if isAdmin();
+    }
+
+    // Default deny — anything not explicitly matched above is blocked.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

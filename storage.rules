@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// Mirrors the same role logic as firestore.rules. Not currently wired to
+// any upload UI (see src/services/storageService.js) but ready for when
+// one is added — e.g. incident evidence photos, SOP diagrams, report PDFs.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return isSignedIn()
+        ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function hasRole(roles) {
+      return isSignedIn() && myRole() in roles;
+    }
+
+    match /incidents/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager', 'hse_officer', 'supervisor', 'employee']);
+    }
+
+    match /documents/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    match /sops/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    match /vehicles/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    match /reports/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
