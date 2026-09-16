@@ -5,6 +5,8 @@ import { VIEW_TITLES, ROUTE_PATH } from "../../data/navItems";
 import { INSURANCE_NAV_ITEMS } from "../../data/insuranceNavItems";
 import { INSURANCE_RESOURCES } from "../../config/insuranceListConfig";
 import { useAuth } from "../../hooks/useAuth";
+import { useServiceData } from "../../hooks/useServiceData";
+import { getDashboardSummary } from "../../services/dashboardService";
 
 /**
  * Same visual design as the original top bar. View title now derives from
@@ -15,6 +17,12 @@ import { useAuth } from "../../hooks/useAuth";
 function Header({ onToggleSidebar }) {
   const location = useLocation();
   const { logout } = useAuth();
+
+  // Notification count comes from the same real aggregation the dashboard
+  // uses (high-severity open risks + incidents awaiting the ministry form
+  // + pending permits). Zero is a valid result — the badge simply hides.
+  const { rows: summaryRows } = useServiceData(getDashboardSummary, []);
+  const notificationCount = summaryRows?.[0]?.notificationCount ?? 0;
 
   const hseId = Object.entries(ROUTE_PATH).find(([, path]) => path === location.pathname)?.[0];
   const insuranceFixed = INSURANCE_NAV_ITEMS.find((item) => item.path === location.pathname);
@@ -46,11 +54,16 @@ function Header({ onToggleSidebar }) {
         />
       </div>
 
-      <button className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+      <button
+        className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+        title={notificationCount ? `${notificationCount} تنبيه يتطلب المتابعة` : "لا توجد تنبيهات"}
+      >
         <Bell size={18} />
-        <span className="absolute -top-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
-          5
-        </span>
+        {notificationCount > 0 && (
+          <span className="absolute -top-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
+            {notificationCount > 9 ? "9+" : notificationCount}
+          </span>
+        )}
       </button>
 
       <button
