@@ -73,6 +73,13 @@ service cloud.firestore {
       allow write: if hasRole(['admin', 'hse_manager']);
     }
 
+    // Manual volume metadata (title/code/page count), managed alongside
+    // documents by the same roles.
+    match /manualVolumes/{volId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole(['admin', 'hse_manager']);
+    }
+
     // ---- sops -----------------------------------------------------------
     match /sops/{sopId} {
       allow read: if isSignedIn();
